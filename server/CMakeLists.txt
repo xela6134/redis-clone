@@ -1,6 +1,6 @@
 # server CMake
 
-add_executable(server
+add_executable(redis-server
     main.cpp
     RedisServer.cpp
 )

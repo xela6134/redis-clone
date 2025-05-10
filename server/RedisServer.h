@@ -10,9 +10,9 @@ public:
     void run();
     void shutdown();
 private:
-    int port_;
-    int server_socket_;
-    std::atomic<bool> running_;
+    int port;
+    int server_socket;
+    std::atomic<bool> running;
 };
 
 #endif

@@ -12,6 +12,7 @@ public:
 private:
     int port_;
     int server_socket_;
+    std::atomic<bool> running_;
 };
 
 #endif

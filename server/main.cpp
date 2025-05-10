@@ -15,5 +15,5 @@ int main(int argc, char* argv[]) {
     RedisServer server = RedisServer(port);
     server.run();
 
-    
+    return 0;
 }

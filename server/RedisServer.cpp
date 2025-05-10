@@ -4,6 +4,8 @@
 #include <iostream>
 #include <unistd.h>
 
+const int BUFFER_SIZE = 1024;
+
 RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true) {}
 
 void RedisServer::run() {
@@ -44,6 +46,7 @@ void RedisServer::run() {
     socklen_t address_length = sizeof(client_address);
     int client_socket;
 
+    char buffer[BUFFER_SIZE];
     while (running) {
         client_socket = accept(server_socket, (struct sockaddr*)&client_address, &address_length);
 
@@ -58,6 +61,29 @@ void RedisServer::run() {
         int client_port = ntohs(client_address.sin_port);
 
         std::cout << "[INFO] New client connected: " << client_ip << ":" << client_port << std::endl;
+
+        while (true) {
+            ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+
+            if (bytes_received == 0) {
+                std::cout << "[INFO] Client disconnected: " << client_ip << ":" << client_port << std::endl;
+                break;
+            } else if (bytes_received < 0) {
+                perror("[ERROR] Receiving from client failed");
+                break;
+            }
+
+            buffer[bytes_received] = '\0';
+            std::cout << "[CLIENT] " << buffer << std::endl;
+
+            ssize_t bytes_sent = send(client_socket, buffer, bytes_received, 0);
+            if (bytes_sent < 0) {
+                perror("[ERROR] Sending data back to client failed");
+                break;
+            }
+        }
+
+        close(client_socket);
     }
 
     return;

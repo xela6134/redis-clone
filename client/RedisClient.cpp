@@ -24,13 +24,13 @@ void RedisClient::run_client() {
     server_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);    // INADDR_LOOPBACK is 127.0.0.1
 
     if (connect(client_socket, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
-        perror("[ERROR] Failed to connect with client");
+        perror("[ERROR] Failed to connect with server");
         close(client_socket);
         return;
     }
 
     std::cout << "[INFO] Connected to Redis server on port " << port << "." << std::endl;
-    std::cout << "Type exit, or press Ctrl+D to exit gracefully" << std::endl;
+    std::cout << "Type exit, or press Ctrl+C to exit gracefully" << std::endl;
 
     std::string input;
     char buffer[BUFFER_SIZE];
@@ -41,7 +41,7 @@ void RedisClient::run_client() {
 
         // Edge cases
         if (input.empty()) continue;
-        if (input == "exit" or std::cin.eof()) break;
+        if (input == "exit") break;
 
         if (not send_message(input)) {
             std::cerr << "[ERROR] Failed to send command" << std::endl;
@@ -49,7 +49,7 @@ void RedisClient::run_client() {
         }
 
         std::string response = receive_message();
-        std::cout << response << std::endl;
+        std::cout << "Received: " << response << std::endl;
     }
 
     disconnect();

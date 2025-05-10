@@ -77,6 +77,7 @@ std::string RedisClient::receive_message() {
 
 void RedisClient::disconnect() {
     if (client_socket != -1) {
+        std::cout << "[INFO] Gracefully shutting down CLI..." << std::endl;
         close(client_socket);
         client_socket = -1;
         std::cout << "[INFO] Disconnected from server" << std::endl;

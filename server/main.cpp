@@ -29,7 +29,6 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT, handle_sigint);
 
-    server.run();
-
+    server.run_server();
     return 0;
 }

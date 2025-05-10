@@ -8,7 +8,7 @@ const int BUFFER_SIZE = 1024;
 
 RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true) {}
 
-void RedisServer::run() {
+void RedisServer::run_server() {
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
     if (server_socket < 0) {

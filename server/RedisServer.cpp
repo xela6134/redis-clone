@@ -18,7 +18,7 @@ void RedisServer::run() {
     struct sockaddr_in server_address{};
 
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port_);         // Sending is htons, receiving is ntohs
+    server_address.sin_port = htons(port_);         // Sending is htons (host-to-network), receiving is ntohs
     server_address.sin_addr.s_addr = INADDR_ANY;
 
     // Linux doesn't allow reusing the same address too quickly after shutting down

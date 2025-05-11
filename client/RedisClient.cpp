@@ -30,7 +30,7 @@ void RedisClient::run_client() {
     }
 
     std::cout << "[INFO] Connected to Redis server on port " << port << "." << std::endl;
-    std::cout << "Type exit, or press Ctrl+C to exit gracefully" << std::endl;
+    std::cout << "[INFO] Type exit, or press Ctrl+C to exit gracefully" << std::endl;
 
     std::string input;
     char buffer[BUFFER_SIZE];

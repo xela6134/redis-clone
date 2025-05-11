@@ -2,11 +2,12 @@
 
 #include <arpa/inet.h>
 #include <iostream>
+#include <thread>
 #include <unistd.h>
 
 const int BUFFER_SIZE = 1024;
 
-RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true) {}
+RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true), total_clients(0) {}
 
 void RedisServer::run_server() {
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -46,7 +47,6 @@ void RedisServer::run_server() {
     socklen_t address_length = sizeof(client_address);
     int client_socket;
 
-    char buffer[BUFFER_SIZE];
     while (running) {
         client_socket = accept(server_socket, (struct sockaddr*)&client_address, &address_length);
 
@@ -62,28 +62,8 @@ void RedisServer::run_server() {
 
         std::cout << "[INFO] New client connected: " << client_ip << ":" << client_port << std::endl;
 
-        while (true) {
-            ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-
-            if (bytes_received == 0) {
-                std::cout << "[INFO] Client disconnected: " << client_ip << ":" << client_port << std::endl;
-                break;
-            } else if (bytes_received < 0) {
-                perror("[ERROR] Receiving from client failed");
-                break;
-            }
-
-            buffer[bytes_received] = '\0';
-            std::cout << "[CLIENT] " << buffer << std::endl;
-
-            ssize_t bytes_sent = send(client_socket, buffer, bytes_received, 0);
-            if (bytes_sent < 0) {
-                perror("[ERROR] Sending data back to client failed");
-                break;
-            }
-        }
-
-        close(client_socket);
+        std::thread t(RedisServer::handle_client, client_socket, client_ip, client_port);
+        t.detach();
     }
 
     return;
@@ -95,4 +75,31 @@ void RedisServer::shutdown() {
         close(server_socket);
     }
     std::cout << "[INFO] Server shutdown complete" << std::endl;
+}
+
+void RedisServer::handle_client(int client_socket, char client_ip[16], int client_port) {
+    char buffer[BUFFER_SIZE];
+
+    while (true) {
+        ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+
+        if (bytes_received == 0) {
+            std::cout << "[INFO] Client disconnected: " << client_ip << ":" << client_port << std::endl;
+            break;
+        } else if (bytes_received < 0) {
+            perror("[ERROR] Receiving from client failed");
+            break;
+        }
+
+        buffer[bytes_received] = '\0';
+        std::cout << "[CLIENT] " << buffer << std::endl;
+
+        ssize_t bytes_sent = send(client_socket, buffer, bytes_received, 0);
+        if (bytes_sent < 0) {
+            perror("[ERROR] Sending data back to client failed");
+            break;
+        }
+    }
+
+    close(client_socket);
 }

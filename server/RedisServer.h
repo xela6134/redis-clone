@@ -2,7 +2,7 @@
 #define REDIS_SERVER_H
 
 #include <atomic>
-#include <unordered_set>
+#include <unordered_map>
 
 class RedisServer {
 public:
@@ -10,16 +10,17 @@ public:
 
     void run_server();
     void shutdown();
-    static void handle_client(int client_socket, char client_ip[16], int client_port);
+    void handle_client(int client_socket, int client_id);
 private:
     // Network stuff
     int port;
     int server_socket;
     std::atomic<bool> running;
 
-    // For users
-    std::unordered_set<std::string, int> clients;
-    int total_clients;
+    // For users, { id, { client_ip, client_port } }
+    std::unordered_map<int, std::pair<std::string, int>> clients;
+    int next_id;
+    std::mutex clients_mutex;
 };
 
 #endif

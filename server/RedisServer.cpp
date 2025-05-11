@@ -114,12 +114,27 @@ void RedisServer::handle_client(int client_socket, int client_id) {
     close(client_socket);
 }
 
+/**
+ * Sends a single length-prefixed message to a client over TCP.
+ * 
+ * The message is sent using the following protocol format:
+ * +------+--------+
+ * | len  | msg    |
+ * +------+--------+
+ * 
+ * The message consists of:
+ * - A 4-byte little-endian unsigned integer indicating the length of the message
+ * - A message body of that length
+ * 
+ * This function ensures that the entire message (length header and body) is sent
+ * using repeated calls to send() if necessary.
+ */
 bool RedisServer::send_message_lenprefixed(int fd, const std::string &msg) {
     if (msg.size() > MAX_MSG_SIZE) return false;
 
     uint32_t len = msg.size();
     char buf[4 + MAX_MSG_SIZE];
-    memcpy(buf, &len, 4);  // assumes little-endian
+    memcpy(buf, &len, 4);               // assumes little-endian
     memcpy(buf + 4, msg.data(), len);
 
     size_t to_send = 4 + len;
@@ -132,6 +147,22 @@ bool RedisServer::send_message_lenprefixed(int fd, const std::string &msg) {
     return true;
 }
 
+/**
+ * Reads a single length-prefixed message from a client over TCP.
+ * 
+ * The protocol format:
+ * +------+--------+------+--------+--------
+ * | len  | msg1   | len  | msg2   | ...
+ * +------+--------+------+--------+--------
+ * 
+ * Each message consists of:
+ * - A 4-byte little-endian unsigned integer indicating the length of the message body
+ * - A variable-length message body of that length
+ * 
+ * - This function first reads exactly 4 bytes to determine the length of the incoming message,
+ *   then reads exactly that many bytes to get the full message body. 
+ * - If the client disconnects, or an error occurs during reading, a special string is returned.
+ */
 std::string RedisServer::recv_message_lenprefixed(int fd) {
     char header[4];
     size_t received = 0;

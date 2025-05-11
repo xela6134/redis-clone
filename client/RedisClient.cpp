@@ -45,7 +45,7 @@ void RedisClient::run_client() {
         if (input.empty()) continue;
         if (input == "exit") break;
 
-        if (not send_message(input)) {
+        if (!send_message(input)) {
             std::cerr << "[ERROR] Failed to send command" << std::endl;
             break;
         }
@@ -74,6 +74,7 @@ void RedisClient::disconnect() {
     }
 }
 
+// More documentation on RedisServer.cpp
 bool RedisClient::send_message_lenprefixed(int fd, const std::string &msg) {
     if (msg.size() > MAX_MSG_SIZE) return false;
 
@@ -92,6 +93,7 @@ bool RedisClient::send_message_lenprefixed(int fd, const std::string &msg) {
     return true;
 }
 
+// More documentation on RedisServer.cpp
 std::string RedisClient::recv_message_lenprefixed(int fd) {
     char header[4];
     size_t received = 0;

@@ -4,8 +4,10 @@
 #include <iostream>
 #include <unistd.h>
 #include <string>
+#include <string.h>
 
 const int BUFFER_SIZE = 1024;
+const size_t MAX_MSG_SIZE = 4096;
 
 RedisClient::RedisClient(int port) : port(port), client_socket(-1) {}
 
@@ -56,23 +58,11 @@ void RedisClient::run_client() {
 }
 
 bool RedisClient::send_message(const std::string& msg) {
-    ssize_t sent = send(client_socket, msg.c_str(), msg.length(), 0);
-
-    // sent: bytes actually sent
-    // msg.length(): bytes you wanted to send
-    // Defensive programming
-    return sent == (ssize_t) msg.length();
+    return send_message_lenprefixed(client_socket, msg);
 }
 
 std::string RedisClient::receive_message() {
-    char buffer[BUFFER_SIZE];
-    ssize_t bytes = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-    if (bytes <= 0) {
-        return "[ERROR] No response from server";
-    }
-
-    buffer[bytes] = '\0';
-    return std::string(buffer);
+    return recv_message_lenprefixed(client_socket);
 }
 
 void RedisClient::disconnect() {
@@ -82,4 +72,47 @@ void RedisClient::disconnect() {
         client_socket = -1;
         std::cout << "[INFO] Disconnected from server" << std::endl;
     }
+}
+
+bool RedisClient::send_message_lenprefixed(int fd, const std::string &msg) {
+    if (msg.size() > MAX_MSG_SIZE) return false;
+
+    uint32_t len = msg.size();
+    char buf[4 + MAX_MSG_SIZE];
+    memcpy(buf, &len, 4);               // assumes little-endian
+    memcpy(buf + 4, msg.data(), len);
+
+    size_t to_send = 4 + len;
+    size_t sent = 0;
+    while (sent < to_send) {
+        ssize_t n = send(fd, buf + sent, to_send - sent, 0);
+        if (n <= 0) return false;
+        sent += n;
+    }
+    return true;
+}
+
+std::string RedisClient::recv_message_lenprefixed(int fd) {
+    char header[4];
+    size_t received = 0;
+    while (received < 4) {
+        ssize_t n = recv(fd, header + received, 4 - received, 0);
+        if (n <= 0) return "[ERROR] Failed to read length prefix";
+        received += n;
+    }
+
+    uint32_t len;
+    memcpy(&len, header, 4);
+    if (len > MAX_MSG_SIZE) return "[ERROR] Message too long";
+
+    char buf[MAX_MSG_SIZE + 1];
+    received = 0;
+    while (received < len) {
+        ssize_t n = recv(fd, buf + received, len - received, 0);
+        if (n <= 0) return "[ERROR] Failed to read body";
+        received += n;
+    }
+
+    buf[len] = '\0';
+    return std::string(buf);
 }

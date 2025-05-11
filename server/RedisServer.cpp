@@ -4,8 +4,10 @@
 #include <iostream>
 #include <thread>
 #include <unistd.h>
+#include <string.h>
 
 const int BUFFER_SIZE = 1024;
+const size_t MAX_MSG_SIZE = 4096;
 
 RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true), next_id(0) {}
 
@@ -16,7 +18,7 @@ void RedisServer::run_server() {
         perror("[ERROR] Socket creation failed");
         return;
     }
-    
+
     // Create the socket itself
     // Server listens to specified port and address 0.0.0.0 
     struct sockaddr_in server_address;
@@ -91,34 +93,68 @@ void RedisServer::handle_client(int client_socket, int client_id) {
     char buffer[BUFFER_SIZE];
 
     while (true) {
-        ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-
-        // Extra safety measure, just in case std::unordered_map resizes
-        std::string ip;
-        int port;
-        {
-            std::lock_guard<std::mutex> lock(clients_mutex);    // protect read
-            ip = clients[client_id].first;
-            port = clients[client_id].second;
-        }
-
-        if (bytes_received == 0) {
-            std::cout << "[INFO] Client " << client_id << " disconnected: " << ip << ":" << port << std::endl;
+        std::string msg = recv_message_lenprefixed(client_socket);
+        if (msg.starts_with("[DISCONNECT]")) {
+            std::cout << "[INFO] Client " << client_id << " disconnected gracefully" << std::endl;
             break;
-        } else if (bytes_received < 0) {
-            perror("[ERROR] Receiving from client failed");
+        }
+        if (msg.starts_with("[ERROR]")) {
+            std::cerr << msg << std::endl;
             break;
         }
 
-        buffer[bytes_received] = '\0';
-        std::cout << "[CLIENT] Client " << client_id << ": " << buffer << std::endl;
+        std::cout << "[CLIENT] Client " << client_id << ": " << msg << std::endl;
 
-        ssize_t bytes_sent = send(client_socket, buffer, bytes_received, 0);
-        if (bytes_sent < 0) {
-            perror("[ERROR] Sending data back to client failed");
+        if (!send_message_lenprefixed(client_socket, msg)) {
+            std::cerr << "[ERROR] Sending response failed" << std::endl;
             break;
         }
     }
 
     close(client_socket);
+}
+
+bool RedisServer::send_message_lenprefixed(int fd, const std::string &msg) {
+    if (msg.size() > MAX_MSG_SIZE) return false;
+
+    uint32_t len = msg.size();
+    char buf[4 + MAX_MSG_SIZE];
+    memcpy(buf, &len, 4);  // assumes little-endian
+    memcpy(buf + 4, msg.data(), len);
+
+    size_t to_send = 4 + len;
+    size_t sent = 0;
+    while (sent < to_send) {
+        ssize_t n = send(fd, buf + sent, to_send - sent, 0);
+        if (n <= 0) return false;
+        sent += n;
+    }
+    return true;
+}
+
+std::string RedisServer::recv_message_lenprefixed(int fd) {
+    char header[4];
+    size_t received = 0;
+    while (received < 4) {
+        ssize_t n = recv(fd, header + received, 4 - received, 0);
+        if (n == 0) return "[DISCONNECT] Client closed connection";
+        if (n < 0) return "[ERROR] Failed to read length prefix";
+        received += n;
+    }
+
+    uint32_t len;
+    memcpy(&len, header, 4);
+    if (len > MAX_MSG_SIZE) return "[ERROR] Message too long";
+
+    char buf[MAX_MSG_SIZE + 1];
+    received = 0;
+    while (received < len) {
+        ssize_t n = recv(fd, buf + received, len - received, 0);
+        if (n == 0) return "[DISCONNECT] Client closed connection";
+        if (n < 0) return "[ERROR] Failed to read body";
+        received += n;
+    }
+
+    buf[len] = '\0';
+    return std::string(buf);
 }

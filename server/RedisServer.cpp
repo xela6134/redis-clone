@@ -5,22 +5,24 @@
 #include <thread>
 #include <unistd.h>
 #include <string.h>
+#include <poll.h>
+#include <unordered_map>
+#include <vector>
+#include <fcntl.h>
 
 const int BUFFER_SIZE = 1024;
 const size_t MAX_MSG_SIZE = 4096;
 
-RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true), next_id(0) {}
+RedisServer::RedisServer(int port) : port(port), server_socket(-1), running(true), next_client_id(0) {}
 
 void RedisServer::run_server() {
+    // Server socket creation
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
-
     if (server_socket < 0) {
         perror("[ERROR] Socket creation failed");
         return;
     }
 
-    // Create the socket itself
-    // Server listens to specified port and address 0.0.0.0 
     struct sockaddr_in server_address;
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);              // Sending is htons (host-to-network short), receiving is ntohs (for ports)
@@ -41,44 +43,102 @@ void RedisServer::run_server() {
     // Listening
     if (listen(server_socket, 10) < 0) {
         perror("[ERROR] Socket listening failed");
+        return;
     }
+
+    // Set server socket to 'non-blocking'
+    // Blocking: Function waits until data arrives (e.g. read())
+    // Non-blocking: Just do the next thing, doesn't matter if data was received or not
+    fcntl(server_socket, F_SETFL, O_NONBLOCK);
 
     std::cout << "[INFO] Redis Server listening on port " << port << std::endl;
 
-    struct sockaddr_in client_address;
-    socklen_t address_length = sizeof(client_address);
-    int client_socket;
+    // Store all the sockets in fds
+    std::vector<pollfd> fds;
+    std::unordered_map<int, std::string> client_buffers;
+    fds.push_back({server_socket, POLLIN, 0});
 
     while (running) {
-        client_socket = accept(server_socket, (struct sockaddr*)&client_address, &address_length);
-
-        if (client_socket < 0) {
-            perror("[ERROR] Accepting client failed");
-            return;
+        // poll changes each pollfd.events to check if events are ready
+        int ready = poll(fds.data(), fds.size(), -1);
+        if (ready < 0) {
+            perror("[ERROR] poll() failed");
+            break;
         }
 
-        // Display client info
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_address.sin_addr, client_ip, INET_ADDRSTRLEN);
-        int client_port = ntohs(client_address.sin_port);
+        for (size_t i = 0; i < fds.size(); ++i) {
+            // Only works if there actually is something to read
+            if (fds[i].revents & POLLIN) {
+                int fd = fds[i].fd;
 
-        // Adds each client data in data structure, safeguarded by mutex
-        int curr_id;
-        {
-            std::lock_guard<std::mutex> lock(clients_mutex);    // protect write
-            curr_id = next_id++;
-            clients[curr_id] = {client_ip, client_port};
+                // Accepting new client
+                if (fd == server_socket) {                    
+                    struct sockaddr_in client_addr;
+                    socklen_t addr_len = sizeof(client_addr);
+                    int client_fd = accept(server_socket, (struct sockaddr*)&client_addr, &addr_len);
+                    if (client_fd < 0) {
+                        perror("[ERROR] Accept failed");
+                        continue;
+                    }
+
+                    int client_id = next_client_id++;
+                    fd_to_client_id[client_fd] = client_id;
+
+                    fcntl(client_fd, F_SETFL, O_NONBLOCK);
+
+                    fds.push_back({client_fd, POLLIN, 0});
+                    client_buffers[client_fd] = "";
+
+                    char ip[INET_ADDRSTRLEN];
+                    inet_ntop(AF_INET, &client_addr.sin_addr, ip, INET_ADDRSTRLEN);
+                    int port = ntohs(client_addr.sin_port);
+                    std::cout << "[INFO] Client " << client_id << " connected: " << ip << ":" << port << std::endl;
+                } 
+                
+                // Handling client message
+                else {
+                    std::string msg = recv_message_lenprefixed(fd);
+
+                    if (msg.starts_with("[DISCONNECT]")) {
+                        int client_id = fd_to_client_id[fd];
+                        std::cout << "[INFO] Client " << client_id << " disconnected gracefully" << std::endl;
+                        
+                        close(fd);
+                        client_buffers.erase(fd);
+                        fd_to_client_id.erase(fd);
+                        fds.erase(fds.begin() + i);
+                        --i;
+                        continue;
+                    }
+
+                    if (msg.starts_with("[ERROR]")) {
+                        int client_id = fd_to_client_id[fd];
+                        std::cerr << "[ERROR] Client " << client_id << ": " << msg << std::endl;
+                        close(fd);
+                        client_buffers.erase(fd);
+                        fds.erase(fds.begin() + i);
+                        --i;
+                        continue;
+                    }
+
+                    int client_id = fd_to_client_id[fd];
+                    std::cout << "[CLIENT " << client_id << "]: " << msg << std::endl;
+
+                    if (!send_message_lenprefixed(fd, msg)) {
+                        int client_id = fd_to_client_id[fd];
+                        std::cerr << "[ERROR] Failed to send response to client " << client_id << std::endl;
+                        close(fd);
+                        client_buffers.erase(fd);
+                        fds.erase(fds.begin() + i);
+                        --i;
+                        continue;
+                    }
+                }
+            }
         }
-
-        std::cout << "[INFO] New client connected: " << client_ip << ":" << client_port << ", ID " << curr_id << std::endl;
-
-        std::thread t([this, client_socket, curr_id]() {
-            this->handle_client(client_socket, curr_id);
-        });
-        t.detach();
     }
 
-    return;
+    close(server_socket);
 }
 
 void RedisServer::shutdown() {
@@ -87,31 +147,6 @@ void RedisServer::shutdown() {
         close(server_socket);
     }
     std::cout << "[INFO] Server shutdown complete" << std::endl;
-}
-
-void RedisServer::handle_client(int client_socket, int client_id) {
-    char buffer[BUFFER_SIZE];
-
-    while (true) {
-        std::string msg = recv_message_lenprefixed(client_socket);
-        if (msg.starts_with("[DISCONNECT]")) {
-            std::cout << "[INFO] Client " << client_id << " disconnected gracefully" << std::endl;
-            break;
-        }
-        if (msg.starts_with("[ERROR]")) {
-            std::cerr << msg << std::endl;
-            break;
-        }
-
-        std::cout << "[CLIENT] Client " << client_id << ": " << msg << std::endl;
-
-        if (!send_message_lenprefixed(client_socket, msg)) {
-            std::cerr << "[ERROR] Sending response failed" << std::endl;
-            break;
-        }
-    }
-
-    close(client_socket);
 }
 
 /**

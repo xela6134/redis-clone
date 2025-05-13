@@ -51,7 +51,7 @@ void RedisClient::run_client() {
         }
 
         std::string response = receive_message();
-        std::cout << "Received: " << response << std::endl;
+        std::cout << response << std::endl;
     }
 
     disconnect();

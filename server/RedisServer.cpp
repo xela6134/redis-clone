@@ -229,36 +229,36 @@ std::string RedisServer::recv_message_lenprefixed(int fd) {
 
 std::string RedisServer::handle_command(const std::string& msg) {
     std::istringstream iss(msg);
-    std::string cmd;
-    iss >> cmd;
+    std::vector<std::string> tokens;
+    std::string token;
+
+    while (iss >> token) {
+        tokens.push_back(token);
+    }
+
+    if (tokens.empty()) {
+        return "[ERROR] Empty command";
+    }
+
+    std::string cmd = tokens[0];
 
     if (cmd == "SET") {
-        std::string key, value;
-        iss >> key;
-        std::getline(iss, value);
-        if (key.empty() or value.empty()) {
+        if (tokens.size() != 3) {
             return "[ERROR] SET usage: SET <key> <value>";
         }
-
-        // Remove leading space from value
-        if (value[0] == ' ') value = value.substr(1);
+        const std::string& key = tokens[1];
+        const std::string& value = tokens[2];
         kv_store[key] = value;
         return "OK";
     }
 
-    else if (cmd == "GET") {
-        std::string key;
-        iss >> key;
-        if (key.empty()) {
+    if (cmd == "GET") {
+        if (tokens.size() != 2) {
             return "[ERROR] GET usage: GET <key>";
         }
-
+        const std::string& key = tokens[1];
         auto it = kv_store.find(key);
-        if (it != kv_store.end()) {
-            return it->second;
-        } else {
-            return "NULL";
-        }
+        return (it != kv_store.end()) ? it->second : "NULL";
     }
 
     return "[ERROR] Unknown command";

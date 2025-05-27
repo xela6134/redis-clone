@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include <fcntl.h>
+#include <sstream>
 
 const int BUFFER_SIZE = 1024;
 const size_t MAX_MSG_SIZE = 4096;
@@ -124,7 +125,8 @@ void RedisServer::run_server() {
                     int client_id = fd_to_client_id[fd];
                     std::cout << "[CLIENT " << client_id << "]: " << msg << std::endl;
 
-                    if (!send_message_lenprefixed(fd, msg)) {
+                    std::string response = handle_command(msg);
+                    if (not send_message_lenprefixed(fd, response)) {
                         int client_id = fd_to_client_id[fd];
                         std::cerr << "[ERROR] Failed to send response to client " << client_id << std::endl;
                         close(fd);
@@ -223,4 +225,41 @@ std::string RedisServer::recv_message_lenprefixed(int fd) {
 
     buf[len] = '\0';
     return std::string(buf);
+}
+
+std::string RedisServer::handle_command(const std::string& msg) {
+    std::istringstream iss(msg);
+    std::string cmd;
+    iss >> cmd;
+
+    if (cmd == "SET") {
+        std::string key, value;
+        iss >> key;
+        std::getline(iss, value);
+        if (key.empty() or value.empty()) {
+            return "[ERROR] SET usage: SET <key> <value>";
+        }
+
+        // Remove leading space from value
+        if (value[0] == ' ') value = value.substr(1);
+        kv_store[key] = value;
+        return "OK";
+    }
+
+    else if (cmd == "GET") {
+        std::string key;
+        iss >> key;
+        if (key.empty()) {
+            return "[ERROR] GET usage: GET <key>";
+        }
+
+        auto it = kv_store.find(key);
+        if (it != kv_store.end()) {
+            return it->second;
+        } else {
+            return "NULL";
+        }
+    }
+
+    return "[ERROR] Unknown command";
 }

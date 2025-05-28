@@ -198,7 +198,7 @@ bool RedisServer::send_message_lenprefixed(int fd, const std::string &msg) {
  * 
  * - This function first reads exactly 4 bytes to determine the length of the incoming message,
  *   then reads exactly that many bytes to get the full message body. 
- * - If the client disconnects, or an error occurs during reading, a special string is returned.
+ * - If the client disconnects, or an error occurs during reading, an error is returned.
  */
 std::string RedisServer::recv_message_lenprefixed(int fd) {
     char header[4];

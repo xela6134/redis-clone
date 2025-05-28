@@ -21,6 +21,25 @@ This project simulates basic Redis functionality using custom socket programming
 
 ---
 
+### 📚 Command Parsing
+
+Reads a single length-prefixed message from a client over TCP.
+
+The protocol format:
+
+```
++------+--------+------+--------+--------
+| len  | msg1   | len  | msg2   | ...
++------+--------+------+--------+--------
+```
+Each message consists of:
+- A 4-byte little-endian unsigned integer indicating the length of the message body
+- A variable-length message body of that length
+- This function first reads exactly 4 bytes to determine the length of the incoming message, then reads exactly that many bytes to get the full message body. 
+- If the client disconnects, or an error occurs during reading, an error is returned.
+
+---
+
 ### ⚙️ Architecture
 
 ```text

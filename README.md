@@ -1,6 +1,6 @@
 # redis-clone
 
-A minimal Redis-like server and client implementation in C/C++.
+A minimal Redis-like server and client implementation in C/C++. 
 
 This project simulates basic Redis functionality using custom socket programming and a simple key-value store, on a single thread with polling, similar to Redis _(redis uses epoll)_. It implements a length-prefixed protocol over TCP, supports concurrent clients using an event-driven polling model, and processes simple commands like `SET` and `GET`.
 
